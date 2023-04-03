@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/astaxie/beego"
 	openai "github.com/sashabaranov/go-openai"
@@ -24,6 +25,7 @@ var config openai.ClientConfig
 type UserBox struct {
 	InQuestion bool
 	Client     *openai.Client
+	Time       time.Time
 }
 
 var userBox = make(map[string]*UserBox)
@@ -31,6 +33,9 @@ var userBox = make(map[string]*UserBox)
 func init() {
 	beego.Debug("token", token)
 	beego.Debug("proxy", proxy)
+
+	//定时器
+	go timeOut()
 
 	config = openai.DefaultConfig(token)
 	proxyUrl, err := url.Parse(proxy)
@@ -105,6 +110,8 @@ func (api *ApiController) Chat() {
 		client = user.Client
 	}
 
+	user.Time = time.Now()
+
 	beego.Debug(data.Id, data.Msg)
 
 	resp, err := client.CreateChatCompletion(
@@ -155,4 +162,19 @@ func (api *ApiController) Chat() {
 
 	userBox[data.Id].InQuestion = false
 	api.ServeJSON()
+}
+
+// 定时器，超时
+func timeOut() {
+	timeTicker := time.NewTicker(60 * time.Second)
+	for {
+		<-timeTicker.C
+		for id, user := range userBox {
+			if user.InQuestion && user.Time.Add(5*time.Second).Before(time.Now()) {
+				beego.Debug("清除超时的用户", id)
+				user.InQuestion = false
+			}
+		}
+		continue
+	}
 }
